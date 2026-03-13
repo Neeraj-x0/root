@@ -22,6 +22,12 @@
 
 
 #include "TMVA/RModelParser_PyTorch.h"
+#include "TMVA/ROperator_Elu.hxx"
+#include "TMVA/ROperator_Pool.hxx"
+#include "TMVA/ROperator_BatchNormalization.hxx"
+#include "TMVA/ROperator_RNN.hxx"
+#include "TMVA/ROperator_LSTM.hxx"
+#include "TMVA/ROperator_GRU.hxx"
 
 #include <Python.h>
 
@@ -70,6 +76,12 @@ std::unique_ptr<ROperator> MakePyTorchNode(PyObject* fNode);
 
 std::unique_ptr<ROperator> MakePyTorchGemm(PyObject* fNode);      // For instantiating ROperator for PyTorch ONNX's Gemm operator
 std::unique_ptr<ROperator> MakePyTorchConv(PyObject* fNode); // For instantiating ROperator for PyTorch ONNX's Conv operator
+std::unique_ptr<ROperator> MakePyTorchElu(PyObject* fNode);       // For instantiating ROperator for PyTorch ONNX's Elu operator
+std::unique_ptr<ROperator> MakePyTorchMaxPool(PyObject* fNode);   // For instantiating ROperator for PyTorch ONNX's MaxPool operator
+std::unique_ptr<ROperator> MakePyTorchBatchNorm(PyObject* fNode); // For instantiating ROperator for PyTorch ONNX's BatchNormalization operator
+std::unique_ptr<ROperator> MakePyTorchRNN(PyObject* fNode);       // For instantiating ROperator for PyTorch ONNX's RNN operator
+std::unique_ptr<ROperator> MakePyTorchLSTM(PyObject* fNode);      // For instantiating ROperator for PyTorch ONNX's LSTM operator
+std::unique_ptr<ROperator> MakePyTorchGRU(PyObject* fNode);       // For instantiating ROperator for PyTorch ONNX's GRU operator
 std::unique_ptr<ROperator> MakePyTorchRelu(PyObject* fNode);      // For instantiating ROperator for PyTorch ONNX's Relu operator
 std::unique_ptr<ROperator> MakePyTorchSelu(PyObject* fNode);      // For instantiating ROperator for PyTorch ONNX's Selu operator
 std::unique_ptr<ROperator> MakePyTorchSigmoid(PyObject* fNode);      // For instantiating ROperator for PyTorch ONNX's Sigmoid operator
@@ -85,7 +97,13 @@ const PyTorchMethodMap mapPyTorchNode =
     {"onnx::Relu",      &MakePyTorchRelu},
     {"onnx::Selu",      &MakePyTorchSelu},
     {"onnx::Sigmoid",   &MakePyTorchSigmoid},
-    {"onnx::Transpose", &MakePyTorchTranspose}
+    {"onnx::Transpose",          &MakePyTorchTranspose},
+    {"onnx::Elu",                &MakePyTorchElu},
+    {"onnx::MaxPool",            &MakePyTorchMaxPool},
+    {"onnx::BatchNormalization", &MakePyTorchBatchNorm},
+    {"onnx::RNN",                &MakePyTorchRNN},
+    {"onnx::LSTM",               &MakePyTorchLSTM},
+    {"onnx::GRU",                &MakePyTorchGRU}
 };
 
 
@@ -332,6 +350,237 @@ std::unique_ptr<ROperator> MakePyTorchConv(PyObject* fNode){
         }
         return op;
 }
+
+//////////////////////////////////////////////////////////////////////////////////
+/// \brief Prepares a ROperator_Elu object
+std::unique_ptr<ROperator> MakePyTorchElu(PyObject* fNode){
+    PyObject* fAttributes  = PyDict_GetItemString(fNode,"nodeAttributes");
+    PyObject* fInputs      = PyDict_GetItemString(fNode,"nodeInputs");
+    PyObject* fOutputs     = PyDict_GetItemString(fNode,"nodeOutputs");
+    std::string fNodeDType = PyStringAsString(PyList_GetItem(PyDict_GetItemString(fNode,"nodeDType"),0));
+    float fAlpha = 1.0f;
+    PyObject* fAttrAlpha = PyDict_GetItemString(fAttributes,"alpha");
+    if(fAttrAlpha) fAlpha = (float)PyFloat_AsDouble(fAttrAlpha);
+    std::string fNameX = PyStringAsString(PyList_GetItem(fInputs,0));
+    std::string fNameY = PyStringAsString(PyList_GetItem(fOutputs,0));
+    std::unique_ptr<ROperator> op;
+    switch(ConvertStringToType(fNodeDType)){
+        case ETensorType::FLOAT:
+            op.reset(new ROperator_Elu<float>(fAlpha, fNameX, fNameY));
+            break;
+        default:
+            throw std::runtime_error("TMVA::SOFIE - Unsupported - Operator Elu does not yet support input type " + fNodeDType);
+    }
+    return op;
+}
+
+//////////////////////////////////////////////////////////////////////////////////
+/// \brief Prepares a ROperator_Pool object for MaxPool
+std::unique_ptr<ROperator> MakePyTorchMaxPool(PyObject* fNode){
+    PyObject* fAttributes  = PyDict_GetItemString(fNode,"nodeAttributes");
+    PyObject* fInputs      = PyDict_GetItemString(fNode,"nodeInputs");
+    PyObject* fOutputs     = PyDict_GetItemString(fNode,"nodeOutputs");
+    std::string fNodeDType = PyStringAsString(PyList_GetItem(PyDict_GetItemString(fNode,"nodeDType"),0));
+    RAttributes_Pool attr;
+    PyObject* fKernelShape = PyDict_GetItemString(fAttributes,"kernel_shape");
+    if(fKernelShape) attr.kernel_shape = GetDataFromList(fKernelShape);
+    PyObject* fPads = PyDict_GetItemString(fAttributes,"pads");
+    if(fPads) attr.pads = GetDataFromList(fPads);
+    PyObject* fStrides = PyDict_GetItemString(fAttributes,"strides");
+    if(fStrides) attr.strides = GetDataFromList(fStrides);
+    PyObject* fDilations = PyDict_GetItemString(fAttributes,"dilations");
+    if(fDilations) attr.dilations = GetDataFromList(fDilations);
+    PyObject* fCeilMode = PyDict_GetItemString(fAttributes,"ceil_mode");
+    if(fCeilMode) attr.ceil_mode = (int)PyLong_AsLong(fCeilMode);
+    PyObject* fStorageOrder = PyDict_GetItemString(fAttributes,"storage_order");
+    if(fStorageOrder) attr.storage_order = (int)PyLong_AsLong(fStorageOrder);
+    std::string fNameX = PyStringAsString(PyList_GetItem(fInputs,0));
+    std::string fNameY = PyStringAsString(PyList_GetItem(fOutputs,0));
+    std::unique_ptr<ROperator> op;
+    switch(ConvertStringToType(fNodeDType)){
+        case ETensorType::FLOAT:
+            op.reset(new ROperator_Pool<float>(MaxPool, attr, fNameX, fNameY));
+            break;
+        default:
+            throw std::runtime_error("TMVA::SOFIE - Unsupported - Operator MaxPool does not yet support input type " + fNodeDType);
+    }
+    return op;
+}
+
+//////////////////////////////////////////////////////////////////////////////////
+/// \brief Prepares a ROperator_BatchNormalization object
+std::unique_ptr<ROperator> MakePyTorchBatchNorm(PyObject* fNode){
+    PyObject* fAttributes  = PyDict_GetItemString(fNode,"nodeAttributes");
+    PyObject* fInputs      = PyDict_GetItemString(fNode,"nodeInputs");
+    PyObject* fOutputs     = PyDict_GetItemString(fNode,"nodeOutputs");
+    std::string fNodeDType = PyStringAsString(PyList_GetItem(PyDict_GetItemString(fNode,"nodeDType"),0));
+    float fEpsilon  = 1e-5f;
+    float fMomentum = 0.9f;
+    PyObject* fAttrEps = PyDict_GetItemString(fAttributes,"epsilon");
+    if(fAttrEps) fEpsilon = (float)PyFloat_AsDouble(fAttrEps);
+    PyObject* fAttrMom = PyDict_GetItemString(fAttributes,"momentum");
+    if(fAttrMom) fMomentum = (float)PyFloat_AsDouble(fAttrMom);
+    std::string fNameX     = PyStringAsString(PyList_GetItem(fInputs,0));
+    std::string fNameScale = PyStringAsString(PyList_GetItem(fInputs,1));
+    std::string fNameB     = PyStringAsString(PyList_GetItem(fInputs,2));
+    std::string fNameMean  = PyStringAsString(PyList_GetItem(fInputs,3));
+    std::string fNameVar   = PyStringAsString(PyList_GetItem(fInputs,4));
+    std::string fNameY     = PyStringAsString(PyList_GetItem(fOutputs,0));
+    std::unique_ptr<ROperator> op;
+    switch(ConvertStringToType(fNodeDType)){
+        case ETensorType::FLOAT:
+            op.reset(new ROperator_BatchNormalization<float>(fEpsilon, fMomentum, 0, fNameX, fNameScale, fNameB, fNameMean, fNameVar, fNameY));
+            break;
+        default:
+            throw std::runtime_error("TMVA::SOFIE - Unsupported - Operator BatchNormalization does not yet support input type " + fNodeDType);
+    }
+    return op;
+}
+
+//////////////////////////////////////////////////////////////////////////////////
+/// \brief Prepares a ROperator_RNN object
+std::unique_ptr<ROperator> MakePyTorchRNN(PyObject* fNode){
+    PyObject* fAttributes  = PyDict_GetItemString(fNode,"nodeAttributes");
+    PyObject* fInputs      = PyDict_GetItemString(fNode,"nodeInputs");
+    PyObject* fOutputs     = PyDict_GetItemString(fNode,"nodeOutputs");
+    std::string fNodeDType = PyStringAsString(PyList_GetItem(PyDict_GetItemString(fNode,"nodeDType"),0));
+    std::vector<float> fActivationAlpha, fActivationBeta;
+    std::vector<std::string> fActivations;
+    float fClip = 0.0f;
+    std::string fDirection = "forward";
+    size_t fHiddenSize = 1;
+    size_t fLayout = 0;
+    PyObject* fAttr;
+    fAttr = PyDict_GetItemString(fAttributes,"activations");
+    if(fAttr) for(Py_ssize_t i=0;i<PyList_Size(fAttr);i++) fActivations.push_back(PyStringAsString(PyList_GetItem(fAttr,i)));
+    fAttr = PyDict_GetItemString(fAttributes,"direction");
+    if(fAttr) fDirection = PyStringAsString(fAttr);
+    fAttr = PyDict_GetItemString(fAttributes,"hidden_size");
+    if(fAttr) fHiddenSize = (size_t)PyLong_AsLong(fAttr);
+    fAttr = PyDict_GetItemString(fAttributes,"layout");
+    if(fAttr) fLayout = (size_t)PyLong_AsLong(fAttr);
+    fAttr = PyDict_GetItemString(fAttributes,"clip");
+    if(fAttr) fClip = (float)PyFloat_AsDouble(fAttr);
+    auto getInput = [&](int i) -> std::string {
+        if(i < PyList_Size(fInputs)) return PyStringAsString(PyList_GetItem(fInputs,i));
+        return "";
+    };
+    auto getOutput = [&](int i) -> std::string {
+        if(i < PyList_Size(fOutputs)) return PyStringAsString(PyList_GetItem(fOutputs,i));
+        return "";
+    };
+    std::unique_ptr<ROperator> op;
+    switch(ConvertStringToType(fNodeDType)){
+        case ETensorType::FLOAT:
+            op.reset(new ROperator_RNN<float>(fActivationAlpha, fActivationBeta, fActivations,
+                fClip, fDirection, fHiddenSize, fLayout,
+                getInput(0), getInput(1), getInput(2), getInput(3), getInput(4), getInput(5),
+                getOutput(0), getOutput(1)));
+            break;
+        default:
+            throw std::runtime_error("TMVA::SOFIE - Unsupported - Operator RNN does not yet support input type " + fNodeDType);
+    }
+    return op;
+}
+
+//////////////////////////////////////////////////////////////////////////////////
+/// \brief Prepares a ROperator_LSTM object
+std::unique_ptr<ROperator> MakePyTorchLSTM(PyObject* fNode){
+    PyObject* fAttributes  = PyDict_GetItemString(fNode,"nodeAttributes");
+    PyObject* fInputs      = PyDict_GetItemString(fNode,"nodeInputs");
+    PyObject* fOutputs     = PyDict_GetItemString(fNode,"nodeOutputs");
+    std::string fNodeDType = PyStringAsString(PyList_GetItem(PyDict_GetItemString(fNode,"nodeDType"),0));
+    std::vector<float> fActivationAlpha, fActivationBeta;
+    std::vector<std::string> fActivations;
+    float fClip = 0.0f;
+    std::string fDirection = "forward";
+    size_t fHiddenSize = 1;
+    size_t fInputForget = 0;
+    size_t fLayout = 0;
+    PyObject* fAttr;
+    fAttr = PyDict_GetItemString(fAttributes,"activations");
+    if(fAttr) for(Py_ssize_t i=0;i<PyList_Size(fAttr);i++) fActivations.push_back(PyStringAsString(PyList_GetItem(fAttr,i)));
+    fAttr = PyDict_GetItemString(fAttributes,"direction");
+    if(fAttr) fDirection = PyStringAsString(fAttr);
+    fAttr = PyDict_GetItemString(fAttributes,"hidden_size");
+    if(fAttr) fHiddenSize = (size_t)PyLong_AsLong(fAttr);
+    fAttr = PyDict_GetItemString(fAttributes,"input_forget");
+    if(fAttr) fInputForget = (size_t)PyLong_AsLong(fAttr);
+    fAttr = PyDict_GetItemString(fAttributes,"layout");
+    if(fAttr) fLayout = (size_t)PyLong_AsLong(fAttr);
+    fAttr = PyDict_GetItemString(fAttributes,"clip");
+    if(fAttr) fClip = (float)PyFloat_AsDouble(fAttr);
+    auto getInput = [&](int i) -> std::string {
+        if(i < PyList_Size(fInputs)) return PyStringAsString(PyList_GetItem(fInputs,i));
+        return "";
+    };
+    auto getOutput = [&](int i) -> std::string {
+        if(i < PyList_Size(fOutputs)) return PyStringAsString(PyList_GetItem(fOutputs,i));
+        return "";
+    };
+    std::unique_ptr<ROperator> op;
+    switch(ConvertStringToType(fNodeDType)){
+        case ETensorType::FLOAT:
+            op.reset(new ROperator_LSTM<float>(fActivationAlpha, fActivationBeta, fActivations,
+                fClip, fDirection, fHiddenSize, fInputForget, fLayout,
+                getInput(0), getInput(1), getInput(2), getInput(3), getInput(4), getInput(5), getInput(6), getInput(7),
+                getOutput(0), getOutput(1), getOutput(2)));
+            break;
+        default:
+            throw std::runtime_error("TMVA::SOFIE - Unsupported - Operator LSTM does not yet support input type " + fNodeDType);
+    }
+    return op;
+}
+
+//////////////////////////////////////////////////////////////////////////////////
+/// \brief Prepares a ROperator_GRU object
+std::unique_ptr<ROperator> MakePyTorchGRU(PyObject* fNode){
+    PyObject* fAttributes  = PyDict_GetItemString(fNode,"nodeAttributes");
+    PyObject* fInputs      = PyDict_GetItemString(fNode,"nodeInputs");
+    PyObject* fOutputs     = PyDict_GetItemString(fNode,"nodeOutputs");
+    std::string fNodeDType = PyStringAsString(PyList_GetItem(PyDict_GetItemString(fNode,"nodeDType"),0));
+    std::vector<float> fActivationAlpha, fActivationBeta;
+    std::vector<std::string> fActivations;
+    float fClip = 0.0f;
+    std::string fDirection = "forward";
+    size_t fHiddenSize = 1;
+    size_t fLayout = 0;
+    size_t fLinearBeforeReset = 0;
+    PyObject* fAttr;
+    fAttr = PyDict_GetItemString(fAttributes,"activations");
+    if(fAttr) for(Py_ssize_t i=0;i<PyList_Size(fAttr);i++) fActivations.push_back(PyStringAsString(PyList_GetItem(fAttr,i)));
+    fAttr = PyDict_GetItemString(fAttributes,"direction");
+    if(fAttr) fDirection = PyStringAsString(fAttr);
+    fAttr = PyDict_GetItemString(fAttributes,"hidden_size");
+    if(fAttr) fHiddenSize = (size_t)PyLong_AsLong(fAttr);
+    fAttr = PyDict_GetItemString(fAttributes,"layout");
+    if(fAttr) fLayout = (size_t)PyLong_AsLong(fAttr);
+    fAttr = PyDict_GetItemString(fAttributes,"linear_before_reset");
+    if(fAttr) fLinearBeforeReset = (size_t)PyLong_AsLong(fAttr);
+    fAttr = PyDict_GetItemString(fAttributes,"clip");
+    if(fAttr) fClip = (float)PyFloat_AsDouble(fAttr);
+    auto getInput = [&](int i) -> std::string {
+        if(i < PyList_Size(fInputs)) return PyStringAsString(PyList_GetItem(fInputs,i));
+        return "";
+    };
+    auto getOutput = [&](int i) -> std::string {
+        if(i < PyList_Size(fOutputs)) return PyStringAsString(PyList_GetItem(fOutputs,i));
+        return "";
+    };
+    std::unique_ptr<ROperator> op;
+    switch(ConvertStringToType(fNodeDType)){
+        case ETensorType::FLOAT:
+            op.reset(new ROperator_GRU<float>(fActivationAlpha, fActivationBeta, fActivations,
+                fClip, fDirection, fHiddenSize, fLayout, fLinearBeforeReset,
+                getInput(0), getInput(1), getInput(2), getInput(3), getInput(4), getInput(5),
+                getOutput(0), getOutput(1)));
+            break;
+        default:
+            throw std::runtime_error("TMVA::SOFIE - Unsupported - Operator GRU does not yet support input type " + fNodeDType);
+    }
+    return op;
+}
+
 }//INTERNAL
 
 
@@ -489,6 +738,13 @@ RModel Parse(std::string filename, std::vector<std::vector<size_t>> inputShapes,
         }
         else if (fNodeType == "onnx::Conv") {
          rmodel.AddBlasRoutines({"Gemm", "Axpy"});
+        }
+        else if (fNodeType == "onnx::Selu" || fNodeType == "onnx::Elu") {
+            rmodel.AddNeededStdLib("cmath");
+        }
+        else if (fNodeType == "onnx::RNN" || fNodeType == "onnx::LSTM" || fNodeType == "onnx::GRU") {
+            rmodel.AddBlasRoutines({"Gemm", "Gemv"});
+            rmodel.AddNeededStdLib("cmath");
         }
         rmodel.AddOperator(INTERNAL::MakePyTorchNode(fNode));
     }
