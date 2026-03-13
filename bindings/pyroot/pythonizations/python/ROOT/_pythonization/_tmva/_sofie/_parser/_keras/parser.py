@@ -20,6 +20,8 @@ from .layers.sigmoid import MakeKerasSigmoid
 from .layers.softmax import MakeKerasSoftmax
 from .layers.swish import MakeKerasSwish
 from .layers.tanh import MakeKerasTanh
+from .layers.rnn import MakeKerasRNN
+from .layers.conv_transpose import MakeKerasConvTranspose
 
 
 def MakeKerasActivation(layer):
@@ -63,12 +65,12 @@ mapKerasLayer = {
     "MaxPooling2D": MakeKerasPooling,
     "AveragePooling2D": MakeKerasPooling,
     "GlobalAveragePooling2D": MakeKerasPooling,
-    #  "SimpleRNN": MakeKerasRNN,
-    #  "GRU": MakeKerasRNN,
-    #  "LSTM": MakeKerasRNN,
+    "SimpleRNN": MakeKerasRNN,
+    "GRU": MakeKerasRNN,
+    "LSTM": MakeKerasRNN,
 }
 
-mapKerasLayerWithActivation = {"Dense": MakeKerasDense, "Conv2D": MakeKerasConv}
+mapKerasLayerWithActivation = {"Dense": MakeKerasDense, "Conv2D": MakeKerasConv, "Conv2DTranspose": MakeKerasConvTranspose}
 
 
 def add_layer_into_RModel(rmodel, layer_data):
@@ -235,7 +237,7 @@ def add_layer_into_RModel(rmodel, layer_data):
             # like pooling, convolutional layer from keras requires transpose before and after to match
             # the onnx format
             # if the data format is channels last (can be set to channels first by the user).
-            if fLayerType == "Conv2D":
+            if fLayerType in ["Conv2D", "Conv2DTranspose"]:
                 if layer_data["channels_last"]:
                     op = SOFIE.ROperator_Transpose("float")([0, 3, 1, 2], inputs[0], LayerName + "PreTrans")
                     rmodel.AddOperator(move_operator(op))
@@ -246,7 +248,7 @@ def add_layer_into_RModel(rmodel, layer_data):
             op = mapKerasLayerWithActivation[fLayerType](layer_data)
             rmodel.AddOperator(move_operator(op))
             Activation_layer_input = LayerName + fLayerType
-            if fLayerType == "Conv2D":
+            if fLayerType in ["Conv2D", "Conv2DTranspose"]:
                 if layer_data["channels_last"]:
                     op = SOFIE.ROperator_Transpose("float")(
                         [0, 2, 3, 1], LayerName + fLayerType, LayerName + "PostTrans"
@@ -263,7 +265,7 @@ def add_layer_into_RModel(rmodel, layer_data):
             rmodel.AddOperator(move_operator(mapKerasLayer[LayerActivation](layer_data)))
 
         else:  # if layer is conv and the activation is linear, we need to add transpose before and after
-            if fLayerType == "Conv2D":
+            if fLayerType in ["Conv2D", "Conv2DTranspose"]:
                 inputs = layer_data["layerInput"]
                 outputs = layer_data["layerOutput"]
                 fLayerOutput = outputs[0]
@@ -274,7 +276,7 @@ def add_layer_into_RModel(rmodel, layer_data):
                     layer_data["layerInput"] = inputs
                     outputs[0] = LayerName + "PostTrans"
             rmodel.AddOperator(move_operator(mapKerasLayerWithActivation[fLayerType](layer_data)))
-            if fLayerType == "Conv2D":
+            if fLayerType in ["Conv2D", "Conv2DTranspose"]:
                 if layer_data["channels_last"]:
                     op = SOFIE.ROperator_Transpose("float")([0, 2, 3, 1], LayerName + "PostTrans", fLayerOutput)
                     rmodel.AddOperator(move_operator(op))
@@ -395,7 +397,7 @@ class PyKeras:
                 layer_data["layerWeight"] = []
 
             # for convolutional and pooling layers we need to know the format of the data
-            if layer_data["layerType"] in ["Conv2D", "MaxPooling2D", "AveragePooling2D", "GlobalAveragePooling2D"]:
+            if layer_data["layerType"] in ["Conv2D", "Conv2DTranspose", "MaxPooling2D", "AveragePooling2D", "GlobalAveragePooling2D"]:
                 layer_data["channels_last"] = True if layer.data_format == "channels_last" else False
 
             # for recurrent type layers we need to extract additional unique information
@@ -425,7 +427,7 @@ class PyKeras:
                 rmodel.AddBlasRoutines({"Gemm", "Gemv"})
             elif fLayerType == "BatchNormalization":
                 rmodel.AddBlasRoutines({"Copy", "Axpy"})
-            elif fLayerType == "Conv1D" or fLayerType == "Conv2D" or fLayerType == "Conv3D":
+            elif fLayerType == "Conv1D" or fLayerType == "Conv2D" or fLayerType == "Conv2DTranspose" or fLayerType == "Conv3D":
                 rmodel.AddBlasRoutines({"Gemm", "Axpy"})
             rmodel = add_layer_into_RModel(rmodel, layer_data)
 
